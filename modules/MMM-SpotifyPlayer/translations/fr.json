@@ -1,0 +1,7 @@
+{
+  "NEXT_UP": "À suivre",
+  "IDLE": "Aucune lecture en cours",
+  "NO_TOKEN": "Compte non lié — lance « node auth.js » dans le dossier du module",
+  "NO_CREDENTIALS": "credentials.json manquant",
+  "NO_DEVICE": "Aucun appareil Spotify actif — ouvre Spotify sur un appareil"
+}

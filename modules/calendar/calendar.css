@@ -1,0 +1,15 @@
+.calendar .symbol {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.calendar .title {
+  padding: 0 10px;
+}
+
+.calendar .time {
+  padding-left: 20px;
+  text-align: right;
+}

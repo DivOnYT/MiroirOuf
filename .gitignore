@@ -81,3 +81,4 @@ yarn.lock
 
 # Vitest temporary test files
 tests/**/.tmp/
+modules/MMM-SpotifyPlayer/credentials.json

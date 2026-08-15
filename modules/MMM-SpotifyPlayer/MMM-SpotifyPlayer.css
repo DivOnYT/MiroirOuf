@@ -1,0 +1,523 @@
+/* ==========================================================================
+   MMM-SpotifyPlayer
+   Mise à l'échelle via --sp-u (1 % du plus petit côté), posée par le JS.
+   ========================================================================== */
+
+/* ---------- 0. Intégration MagicMirror ---------- */
+.region.fullscreen.above,
+.region.fullscreen.below { pointer-events: none; }
+
+.MMM-SpotifyPlayer { width: 100%; pointer-events: auto; }
+.MMM-SpotifyPlayer .module-content { padding: 0; margin: 0; }
+.MMM-SpotifyPlayer .module-header  { display: none; }
+
+
+/* ---------- 1. Racine ---------- */
+.sp-root {
+  --sp-u: 1vmin;
+  --sp-scale: 1;
+  --sp-title-lines: 2;
+
+  --sp-accent: #1e6bff;
+  --sp-bg1: #0d1a33;
+  --sp-bg2: #04060c;
+  --sp-glow: hsla(220 90% 45% / .45);
+  --sp-text: #f4f7ff;
+  --sp-dim: rgba(230, 238, 255, .55);
+  --sp-warn: #ffb02e;
+
+  --sp-fs-brand:  clamp(11px, calc(var(--sp-u) * 2.6 * var(--sp-scale)), 24px);
+  --sp-fs-title:  clamp(15px, calc(var(--sp-u) * 4.4 * var(--sp-scale)), 46px);
+  --sp-fs-artist: clamp(10px, calc(var(--sp-u) * 2.6 * var(--sp-scale)), 26px);
+  --sp-fs-time:   clamp(9px,  calc(var(--sp-u) * 1.7 * var(--sp-scale)), 17px);
+  --sp-fs-small:  clamp(7px,  calc(var(--sp-u) * 1.4 * var(--sp-scale)), 13px);
+
+  --sp-gap:    clamp(6px,  calc(var(--sp-u) * 1.6), 20px);
+  --sp-pad:    clamp(12px, calc(var(--sp-u) * 3.0), 42px);
+  --sp-radius: clamp(10px, calc(var(--sp-u) * 2.4), 26px);
+
+  position: relative;
+  width: 100%;
+  color: var(--sp-text);
+  -webkit-font-smoothing: antialiased;
+  pointer-events: auto;
+  box-sizing: border-box;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sp-root *, .sp-root *::before, .sp-root *::after { box-sizing: inherit; }
+
+.sp-root.sp-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 5;
+}
+
+.sp-root:not(.sp-fullscreen) {
+  max-width: var(--sp-max-width, 560px);
+  margin: 0 auto;
+  border-radius: var(--sp-radius);
+}
+
+
+/* ---------- 2. Fonds ---------- */
+.sp-wrapper { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; }
+.sp-root:not(.sp-fullscreen) .sp-wrapper {
+  border-radius: var(--sp-radius);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.06),
+    0 clamp(8px, calc(var(--sp-u)*2), 26px) clamp(20px, calc(var(--sp-u)*6), 60px) rgba(0,0,0,.55);
+}
+
+.sp-bg, .sp-bg-art { position: absolute; inset: 0; z-index: 0; }
+.sp-bg {
+  background:
+    radial-gradient(130% 85% at 50% -10%, var(--sp-glow) 0%, transparent 62%),
+    radial-gradient(90% 60% at 50% 108%, var(--sp-glow) 0%, transparent 70%),
+    linear-gradient(180deg, var(--sp-bg1) 0%, var(--sp-bg2) 100%);
+  transition: background 1.2s ease;
+}
+.sp-bg-art {
+  background-size: cover; background-position: center;
+  filter: blur(clamp(20px, calc(var(--sp-u)*6), 70px)) saturate(1.5);
+  opacity: .28; transform: scale(1.25);
+  transition: background-image .8s ease;
+}
+.sp-wrapper::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.45) 100%);
+}
+
+
+/* ---------- 3. Grille principale ---------- */
+.sp-content {
+  position: absolute; inset: 0; z-index: 2;
+  display: grid;
+  gap: var(--sp-gap);
+  padding:
+    max(var(--sp-pad), env(safe-area-inset-top))
+    max(var(--sp-pad), env(safe-area-inset-right))
+    max(var(--sp-pad), env(safe-area-inset-bottom))
+    max(var(--sp-pad), env(safe-area-inset-left));
+
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "top" "art" "meta" "seek" "bottom";
+}
+
+.sp-root.sp-landscape .sp-content {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  column-gap: calc(var(--sp-gap) * 2);
+  grid-template-areas:
+    "top    top"
+    "art    meta"
+    "art    seek"
+    "art    bottom";
+}
+.sp-root.sp-landscape .sp-meta { text-align: left; align-self: end; }
+
+/* min-width/height: 0 → les zones peuvent rétrécir (anti-débordement) */
+.sp-top, .sp-art-cell, .sp-meta, .sp-seek-zone, .sp-bottom { min-width: 0; min-height: 0; }
+.sp-top       { grid-area: top; }
+.sp-art-cell  { grid-area: art; }
+.sp-meta      { grid-area: meta; }
+.sp-seek-zone { grid-area: seek; }
+.sp-bottom    { grid-area: bottom; }
+
+
+/* ---------- 4. Barre du haut ---------- */
+.sp-top {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,auto) minmax(0,1fr);
+  align-items: center;
+  gap: calc(var(--sp-gap) * .5);
+}
+.sp-top-l { display: flex; gap: calc(var(--sp-gap) * .5); min-width: 0; }
+.sp-top-r { display: flex; gap: calc(var(--sp-gap) * .6); justify-content: flex-end;
+            align-items: center; min-width: 0; }
+
+.sp-brand {
+  font-weight: 700; letter-spacing: .02em;
+  font-size: var(--sp-fs-brand); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-lossless {
+  font-size: clamp(7px, calc(var(--sp-u) * 1.3), 13px);
+  letter-spacing: .16em; font-weight: 600; color: var(--sp-dim);
+  border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
+  padding: .25em .7em; white-space: nowrap; flex: none;
+}
+
+
+/* ---------- 5. Boutons icônes ---------- */
+.sp-ico {
+  all: unset; cursor: pointer;
+  display: grid; place-items: center; position: relative; flex: none;
+  width: clamp(28px, calc(var(--sp-u) * 4.6), 56px); aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  color: var(--sp-dim);
+  transition: background .2s ease, color .2s ease, transform .15s ease;
+  touch-action: manipulation;
+}
+.sp-ico svg { width: 52%; height: 52%; }
+.sp-ico:hover  { background: rgba(255,255,255,.14); color: #fff; }
+.sp-ico:active { transform: scale(.92); }
+.sp-ico.on { color: var(--sp-accent); background: rgba(255,255,255,.1); }
+.sp-like.on svg { fill: var(--sp-accent); stroke: var(--sp-accent); }
+
+.sp-rep-badge {
+  display: none; position: absolute; bottom: 10%; right: 10%;
+  font-size: clamp(6px, calc(var(--sp-u) * 1), 11px); font-weight: 700;
+  background: var(--sp-accent); color: #000;
+  border-radius: 999px; padding: 0 .35em; line-height: 1.3;
+}
+.sp-ico.track .sp-rep-badge { display: block; }
+
+
+/* ---------- 6. Pochette ---------- */
+.sp-art-cell { display: grid; place-items: center; overflow: hidden; }
+.sp-root:not(.sp-fullscreen) .sp-art-cell { aspect-ratio: 1 / 1; }
+
+.sp-art-box {
+  position: relative;
+  width: 100%; max-width: 100%; max-height: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: clamp(4px, calc(var(--sp-u) * 1.2), 16px);
+  overflow: hidden;
+  background: rgba(255,255,255,.05);
+  box-shadow:
+    0 clamp(6px, calc(var(--sp-u)*2), 26px) clamp(16px, calc(var(--sp-u)*5), 55px) rgba(0,0,0,.6),
+    0 0 clamp(10px, calc(var(--sp-u)*4), 60px) var(--sp-glow);
+  /* AUCUN transform : image identique en play et en pause */
+  transition: box-shadow .6s ease;
+}
+.sp-art { width: 100%; height: 100%; object-fit: cover; display: block;
+          opacity: 0; transition: opacity .5s ease; }
+.sp-art.ready { opacity: 1; }
+.sp-art-fallback {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgba(255,255,255,.05); color: rgba(255,255,255,.2);
+}
+.sp-art-fallback svg { width: 28%; height: 28%; }
+.sp-art.ready + .sp-art-fallback { display: none; }
+
+
+/* ---------- 7. Titre / artiste ---------- */
+.sp-meta { text-align: center; min-width: 0; overflow: hidden; }
+
+.sp-title {
+  font-size: calc(var(--sp-fs-title) * var(--sp-fit-title, 1));
+  font-weight: 700; line-height: 1.14; max-width: 100%;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--sp-title-lines, 2);
+  line-clamp: var(--sp-title-lines, 2);
+  overflow: hidden;
+  overflow-wrap: anywhere; word-break: break-word; hyphens: auto;
+}
+.sp-artist {
+  font-size: calc(var(--sp-fs-artist) * var(--sp-fit-artist, 1));
+  color: var(--sp-dim); margin-top: .3em;
+  max-width: 100%; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+
+/* ---------- 8. Progression ---------- */
+.sp-seek-zone { display: grid; }
+.sp-times {
+  display: flex; justify-content: space-between;
+  font-size: var(--sp-fs-time); color: var(--sp-dim);
+  padding-inline: .3em; margin-bottom: .4em;
+  font-variant-numeric: tabular-nums;
+}
+.sp-bar {
+  cursor: pointer;
+  padding-block: clamp(6px, calc(var(--sp-u) * 1.2), 14px);
+  touch-action: none;
+}
+.sp-bar-track {
+  position: relative; height: clamp(4px, calc(var(--sp-u) * .8), 8px);
+  background: rgba(255,255,255,.16); border-radius: 999px;
+}
+.sp-bar-fill {
+  position: relative; height: 100%; width: 0%;
+  background: linear-gradient(90deg, #fff, var(--sp-accent));
+  border-radius: 999px; transition: width .15s linear;
+}
+.sp-knob {
+  position: absolute; right: 0; top: 50%;
+  width: clamp(10px, calc(var(--sp-u) * 2), 20px); aspect-ratio: 1;
+  transform: translate(50%, -50%) scale(0);
+  background: #fff; border-radius: 50%;
+  box-shadow: 0 0 clamp(4px, calc(var(--sp-u)*1.4), 14px) var(--sp-accent);
+  transition: transform .18s ease;
+}
+.sp-knob.sm { width: clamp(8px, calc(var(--sp-u) * 1.5), 15px); }
+.sp-bar:hover .sp-knob,
+.sp-vol-bar:hover .sp-knob { transform: translate(50%, -50%) scale(1); }
+
+
+/* ---------- 9. Bas ---------- */
+.sp-bottom {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  grid-template-areas: "queue controls vol";
+  align-items: center; gap: var(--sp-gap);
+  margin-top: calc(var(--sp-gap) * .5);
+}
+.sp-queue    { grid-area: queue;    min-width: 0; }
+.sp-controls { grid-area: controls; }
+.sp-vol      { grid-area: vol;      min-width: 0; }
+
+.sp-queue {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: clamp(6px, calc(var(--sp-u) * 1.4), 16px);
+  padding: clamp(5px, calc(var(--sp-u) * 1.2), 16px);
+  overflow: hidden;
+}
+.sp-queue-title {
+  font-size: clamp(7px, calc(var(--sp-u) * 1.3), 13px);
+  color: var(--sp-dim); font-weight: 600; margin-bottom: .5em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-queue-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: clamp(3px, calc(var(--sp-u) * .9), 10px);
+}
+.sp-queue-list li {
+  display: flex; align-items: center;
+  gap: clamp(4px, calc(var(--sp-u) * 1.1), 12px); min-width: 0;
+}
+.sp-q-art {
+  width: clamp(18px, calc(var(--sp-u) * 4), 44px); aspect-ratio: 1; flex: none;
+  border-radius: clamp(2px, calc(var(--sp-u) * .5), 7px);
+  overflow: hidden; background: rgba(255,255,255,.08);
+}
+.sp-q-art img { width: 100%; height: 100%; object-fit: cover; }
+.sp-q-txt { display: grid; min-width: 0; flex: 1 1 auto; }
+.sp-q-txt b, .sp-q-txt i {
+  font-style: normal; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-q-txt b { font-size: var(--sp-fs-small); font-weight: 600; }
+.sp-q-txt i { font-size: calc(var(--sp-fs-small) * .85); color: var(--sp-dim); }
+
+.sp-controls { display: flex; align-items: center; gap: clamp(10px, calc(var(--sp-u) * 2.6), 34px); }
+.sp-ctrl {
+  all: unset; cursor: pointer; color: var(--sp-text); opacity: .9; flex: none;
+  width: clamp(20px, calc(var(--sp-u) * 4), 46px); aspect-ratio: 1;
+  display: grid; place-items: center;
+  transition: transform .15s ease, opacity .15s ease;
+  touch-action: manipulation;
+}
+.sp-ctrl svg { width: 100%; height: 100%; }
+.sp-ctrl:hover  { transform: scale(1.12); opacity: 1; }
+.sp-ctrl:active { transform: scale(.92); }
+
+.sp-play {
+  all: unset; cursor: pointer; flex: none;
+  width: clamp(44px, calc(var(--sp-u) * 9), 100px); aspect-ratio: 1;
+  border-radius: 50%; background: #fff; color: #06080f;
+  display: grid; place-items: center;
+  box-shadow: 0 0 clamp(10px, calc(var(--sp-u)*3), 40px) rgba(255,255,255,.25);
+  transition: transform .15s ease, box-shadow .3s ease;
+  touch-action: manipulation;
+}
+.sp-play svg { width: 42%; height: 42%; }
+.sp-play:hover  { transform: scale(1.06); }
+.sp-play:active { transform: scale(.94); }
+.sp-playing .sp-play { box-shadow: 0 0 clamp(12px, calc(var(--sp-u)*3.5), 48px) var(--sp-glow); }
+
+.sp-vol {
+  display: flex; align-items: center;
+  gap: clamp(4px, calc(var(--sp-u) * 1.2), 12px);
+  justify-content: flex-end; transition: opacity .3s ease;
+}
+.sp-vol-ico { color: var(--sp-dim); flex: none; display: block;
+              width: clamp(12px, calc(var(--sp-u) * 2.6), 26px); }
+.sp-vol-ico svg { width: 100%; height: 100%; }
+.sp-vol-bar {
+  cursor: pointer; min-width: 0;
+  width: clamp(40px, calc(var(--sp-u) * 14), 170px);
+  padding-block: clamp(5px, calc(var(--sp-u) * 1), 12px);
+  touch-action: none;
+}
+.sp-vol-track {
+  position: relative; height: clamp(3px, calc(var(--sp-u) * .7), 6px);
+  background: rgba(255,255,255,.16); border-radius: 999px;
+}
+.sp-vol-fill { position: relative; height: 100%; width: 60%; background: #fff; border-radius: 999px; }
+
+
+/* ---------- 10. Overlay ---------- */
+.sp-overlay {
+  position: absolute; inset: 0; z-index: 5;
+  display: none; place-items: center; text-align: center;
+  background: rgba(4,6,12,.78);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  padding: var(--sp-pad);
+}
+.sp-overlay.on { display: grid; }
+.sp-overlay-msg {
+  font-size: clamp(11px, calc(var(--sp-u) * 2.4), 24px);
+  color: var(--sp-dim); line-height: 1.5; max-width: 80%;
+  overflow-wrap: anywhere; white-space: pre-line;
+}
+
+
+/* ---------- 11. Sélecteur d'appareil ---------- */
+.sp-dev-panel {
+  position: absolute; inset: 0; z-index: 6;
+  display: none; place-items: center;
+  background: rgba(4, 6, 12, .72);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  padding: var(--sp-pad);
+  animation: sp-fade .18s ease;
+}
+.sp-dev-panel.on { display: grid; }
+@keyframes sp-fade { from { opacity: 0 } to { opacity: 1 } }
+
+.sp-dev-card {
+  width: min(100%, 34em); max-height: 100%;
+  display: flex; flex-direction: column;
+  background: rgba(20, 26, 42, .96);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: var(--sp-radius);
+  box-shadow: 0 calc(var(--sp-u)*2) calc(var(--sp-u)*7) rgba(0,0,0,.6);
+  overflow: hidden;
+}
+
+.sp-dev-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1em; flex: none; min-width: 0;
+  padding: clamp(10px, calc(var(--sp-u)*1.8), 22px) clamp(12px, calc(var(--sp-u)*2.2), 26px);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  font-size: var(--sp-fs-brand); font-weight: 700;
+}
+.sp-dev-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sp-dev-close {
+  all: unset; cursor: pointer; flex: none;
+  width: clamp(26px, calc(var(--sp-u)*3.6), 44px); aspect-ratio: 1;
+  display: grid; place-items: center; border-radius: 50%;
+  background: rgba(255,255,255,.08); color: var(--sp-dim);
+  transition: background .2s, color .2s;
+}
+.sp-dev-close:hover { background: rgba(255,255,255,.18); color: #fff; }
+.sp-dev-close svg { width: 45%; height: 45%; }
+
+.sp-dev-list {
+  list-style: none; margin: 0;
+  padding: clamp(6px, calc(var(--sp-u)*1), 12px);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  display: grid; gap: clamp(4px, calc(var(--sp-u)*.8), 10px);
+}
+
+.sp-dev-item {
+  display: flex; align-items: center;
+  gap: clamp(8px, calc(var(--sp-u)*1.6), 18px);
+  padding: clamp(8px, calc(var(--sp-u)*1.5), 18px) clamp(10px, calc(var(--sp-u)*1.8), 20px);
+  border-radius: clamp(6px, calc(var(--sp-u)*1.4), 16px);
+  background: rgba(255,255,255,.04);
+  cursor: pointer; min-width: 0;
+  transition: background .18s ease, transform .12s ease;
+}
+.sp-dev-item:hover  { background: rgba(255,255,255,.12); }
+.sp-dev-item:active { transform: scale(.985); }
+.sp-dev-item.on {
+  background: rgba(255,255,255,.10);
+  box-shadow: inset 0 0 0 1px var(--sp-accent);
+}
+.sp-dev-item.on .sp-dev-ico,
+.sp-dev-item.on .sp-dev-state { color: var(--sp-accent); }
+.sp-dev-item.me .sp-dev-txt i { color: var(--sp-accent); }
+
+/* Lignes d'état du lecteur local */
+.sp-dev-item.sp-dev-pending { cursor: default; opacity: .75; }
+.sp-dev-item.sp-dev-err {
+  box-shadow: inset 0 0 0 1px rgba(255,176,46,.5);
+  background: rgba(255,176,46,.08);
+}
+.sp-dev-item.sp-dev-err .sp-dev-ico,
+.sp-dev-item.sp-dev-err .sp-dev-txt i { color: var(--sp-warn); }
+.sp-dev-item.sp-dev-err .sp-dev-txt i { white-space: normal; }
+
+.sp-spin svg { animation: sp-rotate 1s linear infinite; transform-origin: 50% 50%; }
+@keyframes sp-rotate { to { transform: rotate(360deg); } }
+
+.sp-dev-ico {
+  flex: none; color: var(--sp-dim);
+  width: clamp(18px, calc(var(--sp-u)*2.8), 30px); aspect-ratio: 1;
+  display: grid; place-items: center;
+}
+.sp-dev-ico svg { width: 100%; height: 100%; }
+
+.sp-dev-txt { display: grid; min-width: 0; flex: 1 1 auto; }
+.sp-dev-txt b, .sp-dev-txt i {
+  min-width: 0; font-style: normal;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-dev-txt b { font-size: var(--sp-fs-artist); font-weight: 600; }
+.sp-dev-txt i { font-size: var(--sp-fs-small); color: var(--sp-dim); text-transform: capitalize; }
+
+.sp-dev-state {
+  flex: none; color: transparent;
+  width: clamp(14px, calc(var(--sp-u)*2), 22px); aspect-ratio: 1;
+}
+.sp-dev-state svg { width: 100%; height: 100%; }
+
+.sp-dev-empty {
+  padding: 2em 1em; text-align: center; white-space: pre-line;
+  color: var(--sp-dim); font-size: var(--sp-fs-small); line-height: 1.6;
+}
+
+.sp-dev-foot {
+  flex: none; display: none;
+  padding: clamp(8px, calc(var(--sp-u)*1.4), 18px) clamp(12px, calc(var(--sp-u)*2.2), 26px);
+  border-top: 1px solid rgba(255,255,255,.08);
+  font-size: var(--sp-fs-small); color: var(--sp-dim);
+  line-height: 1.6; white-space: pre-line;
+}
+
+
+/* ---------- 12. Variantes ---------- */
+.sp-root.sp-wide .sp-queue { display: none; }
+
+.sp-root.sp-narrow .sp-bottom {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "controls" "vol" "queue";
+  justify-items: center;
+}
+.sp-root.sp-narrow .sp-vol     { width: 100%; justify-content: center; }
+.sp-root.sp-narrow .sp-vol-bar { width: 100%; }
+.sp-root.sp-narrow .sp-queue   { width: 100%; }
+
+.sp-root.sp-tiny .sp-queue,
+.sp-root.sp-tiny .sp-lossless,
+.sp-root.sp-tiny .sp-vol { display: none; }
+.sp-root.sp-tiny .sp-top { grid-template-columns: minmax(0,1fr); justify-items: center; }
+.sp-root.sp-tiny .sp-top-l { display: none; }
+
+
+/* ---------- 13. Divers ---------- */
+.sp-no-controls .sp-ico,
+.sp-no-controls .sp-ctrl,
+.sp-no-controls .sp-play,
+.sp-no-controls .sp-bar,
+.sp-no-controls .sp-vol-bar,
+.sp-no-controls .sp-dev-item { cursor: default; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-root *, .sp-root *::before, .sp-root *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+  .sp-spin svg { animation: none !important; }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "mmm-spotifyplayer",
+  "version": "1.0.0",
+  "description": "Lecteur Spotify responsive.",
+  "main": "MMM-SpotifyPlayer.js",
+  "scripts": {
+    "auth": "node auth.js"
+  },
+  "license": "MIT"
+}
